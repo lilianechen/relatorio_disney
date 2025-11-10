@@ -50,8 +50,8 @@ if uploaded_file:
         df_disney['ANO'].isin(anos_sel) & df_disney['CLIENTE'].isin(clientes_sel)
     ].copy()
 
-    # Agrupar por código pai
-    df_codpai = df_filtrado.groupby(['ANO', 'CLIENTE', 'CÓD BBR', 'DESCRIÇÃO SISTEMA'], as_index=False).agg(
+    # Agrupar consolidado por código pai (somando todos os anos/clientes)
+    df_codpai = df_filtrado.groupby(['CÓD BBR', 'DESCRIÇÃO SISTEMA'], as_index=False).agg(
         {'QTD EMBARQUE': 'sum', 'FOB': 'mean', 'FOB TOTAL': 'sum'}
     )
 
@@ -59,7 +59,7 @@ if uploaded_file:
     criterio = st.sidebar.radio("📈 Ordenar por:", ["FOB TOTAL", "QTD EMBARQUE"], horizontal=False)
     df_codpai = df_codpai.sort_values(criterio, ascending=False).reset_index(drop=True)
 
-    # Totais
+    # Totais gerais
     total_fob = df_codpai['FOB TOTAL'].sum()
     total_qtd = df_codpai['QTD EMBARQUE'].sum()
 
@@ -67,37 +67,33 @@ if uploaded_file:
     st.markdown(f"### 📦 Total Quantidade: **{total_qtd:,.0f} unidades**")
 
     # Exibir tabela
-    st.subheader("📋 Tabela de Performance Disney (filtrada)")
+    st.subheader("📋 Tabela de Performance Disney (consolidada)")
     st.dataframe(
-        df_codpai[['ANO', 'CLIENTE', 'CÓD BBR', 'DESCRIÇÃO SISTEMA',
-                   'QTD EMBARQUE', 'FOB', 'FOB TOTAL']].style.format({
+        df_codpai[['CÓD BBR', 'DESCRIÇÃO SISTEMA', 'QTD EMBARQUE', 'FOB', 'FOB TOTAL']].style.format({
             'FOB': '{:,.2f}',
             'FOB TOTAL': '{:,.2f}',
         }),
         use_container_width=True
     )
 
-    # --- Exportar Excel (.xlsx) ---
+    # --- Exportar Excel (.xlsx) com referência de filtros ---
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_codpai.to_excel(writer, index=False, sheet_name='Relatório Disney')
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Aba principal
+        df_codpai.to_excel(writer, index=False, sheet_name='Resumo Disney')
 
-        # Formatar planilha
+        # Aba de filtros aplicados (para histórico)
+        filtros_df = pd.DataFrame({
+            'Anos selecionados': [', '.join(map(str, anos_sel))],
+            'Clientes selecionados': [', '.join(clientes_sel)]
+        })
+        filtros_df.to_excel(writer, index=False, sheet_name='Filtros Aplicados')
+
+        # Formatar colunas
         workbook = writer.book
-        worksheet = writer.sheets['Relatório Disney']
-        fmt_money = workbook.add_format({'num_format': '#,##0.00'})
-        fmt_int = workbook.add_format({'num_format': '#,##0'})
-
-        worksheet.set_column('A:A', 10)
-        worksheet.set_column('B:B', 25)
-        worksheet.set_column('C:D', 35)
-        worksheet.set_column('E:E', 15, fmt_int)
-        worksheet.set_column('F:G', 18, fmt_money)
-
-        # Cabeçalho em negrito
-        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#EAEAEA'})
-        for col_num, value in enumerate(df_codpai.columns.values):
-            worksheet.write(0, col_num, value, header_fmt)
+        worksheet = writer.sheets['Resumo Disney']
+        for col in worksheet.columns:
+            worksheet.column_dimensions[col[0].column_letter].width = 25
 
     excel_data = output.getvalue()
 
